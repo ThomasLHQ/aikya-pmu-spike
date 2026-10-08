@@ -3,63 +3,72 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PMU Spike — thử đăng nhập</title>
-<!--
-  TRANG THỬ ĐĂNG NHẬP (spike) — App PMU Aikya trên tenant CME
-  Chạy: python3 -m http.server 3000  → mở http://localhost:3000
-  Chuẩn bị 1 lần (Quản trị Entra, người có quyền admin):
-    1. Dùng app đã có (7c8036f6-a4d0-463c-adb8-f2fe4a81e155) hoặc tạo app "Aikya-PMU-Spike".
-    2. Authentication → Add platform → Single-page application → redirect URI: http://localhost:3000/
-    3. API permissions (Delegated): User.Read + Sites.Selected → Grant admin consent.
-    4. Dán tenantId + clientId vào khối CONFIG bên dưới.
-  Mục đích: chứng minh tài khoản Aikya (khách mời) đăng nhập được vào tenant CME
-  và lấy token gọi Graph. Trang này chỉ thử nghiệm, không chứa dữ liệu.
--->
+<title>PMU Spike — thử đăng nhập (v2)</title>
 <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"
-        onerror="document.getElementById('out').textContent='Không tải được MSAL (cần mạng)'"></script>
+        onerror="fail('Không tải được thư viện MSAL từ CDN — cần mạng, thử tắt VPN/proxy')"></script>
 <style>
-  body{font-family:-apple-system,'Segoe UI',sans-serif;max-width:720px;margin:48px auto;padding:0 24px;color:#1f2937;line-height:1.7}
-  h1{font-size:22px} button{font-size:16px;padding:10px 18px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer}
-  button:hover{background:#f3f4f6} pre{background:#0f172a;color:#e2e8f0;padding:16px;border-radius:8px;overflow:auto;font-size:12.5px}
-  .ok{color:#047857;font-weight:600}.bad{color:#b91c1c;font-weight:600}
+  body{font-family:-apple-system,'Segoe UI',sans-serif;max-width:760px;margin:40px auto;padding:0 24px;color:#1f2937;line-height:1.7}
+  h1{font-size:21px} button{font-size:16px;padding:10px 18px;border-radius:8px;border:1px solid #d1d5db;background:#fff;cursor:pointer;margin-right:8px}
+  button:hover{background:#f3f4f6} pre{background:#0f172a;color:#e2e8f0;padding:16px;border-radius:8px;overflow:auto;font-size:12px;white-space:pre-wrap}
+  .ok{color:#047857;font-weight:700}.bad{color:#b91c1c;font-weight:700}.dim{color:#6b7280}
 </style>
 </head>
 <body>
-<h1>PMU Spike — thử đăng nhập tài khoản Aikya trên tenant CME</h1>
-<p>Nhấn nút, nhập email Aikya (bản ghi khách mời). Microsoft sẽ chuyển sang tenant Aikya để xác thực rồi quay lại trang này.</p>
-<p>
-  <button onclick="dangnhap()">Đăng nhập</button>
-  <button onclick="goiGraph()">Thử đọc Graph</button>
-</p>
-<div id="out">Chưa đăng nhập.</div>
+<h1>PMU Spike — thử đăng nhập tài khoản Aikya trên tenant CME (v2 redirect)</h1>
+<p><button onclick="dangnhap()">Đăng nhập</button> <button onclick="goiGraph()">Thử đọc Graph</button></p>
+<div id="out" class="dim">Đang khởi tạo…</div>
 <pre id="raw">—</pre>
 <script>
 const CONFIG = {
-  TENANT_ID: "9f12d08c-d90d-49c2-8590-5b7154bbe937", // tenant CME
-  CLIENT_ID: "7c8036f6-a4d0-463c-adb8-f2fe4a81e155", // đổi sang app Spike nếu tạo riêng
-  SCOPES: ["User.Read", "https://graph.microsoft.com/Sites.Selected"]
+  TENANT_ID: "9f12d08c-d90d-49c2-8590-5b7154bbe937",
+  CLIENT_ID: "7c8036f6-a4d0-463c-adb8-f2fe4a81e155",
+  SCOPES: ["User.Read", "https://graph.microsoft.com/Sites.Selected"],
+  REDIRECT: "https://thomaslhq.github.io/aikya-pmu-spike/test_page.html"
 };
-const msal = new msal.PublicClientApplication({
-  auth: { clientId: CONFIG.CLIENT_ID, authority: "https://login.microsoftonline.com/" + CONFIG.TENANT_ID, redirectUri: "https://thomaslhq.github.io/aikya-pmu-spike/test_page.html" },
-  cache: { cacheLocation: "sessionStorage" }
-});
 const out = document.getElementById("out"), raw = document.getElementById("raw");
-function show(msg, cls) { out.innerHTML = '<span class="' + (cls || "") + '">' + msg + "</span>"; }
-async function dangnhap() {
+function show(html, cls){ out.innerHTML = '<span class="'+(cls||"")+'">'+html+"</span>"; }
+function fail(msg, err){ show("❌ "+msg, "bad"); if(err) raw.textContent = (err && err.errorCode ? err.errorCode+" — " : "") + (err && err.message ? err.message : String(err)); }
+window.onerror = function(m, s, l){ show("❌ Lỗi script (dòng "+l+"): "+m, "bad"); };
+
+let pca = null;
+try {
+  if (typeof msal === "undefined") fail('Thư viện MSAL chưa nạp được — chờ 3 giây rồi Ctrl+F5');
+  else {
+    pca = new msal.PublicClientApplication({
+      auth: { clientId: CONFIG.CLIENT_ID, authority: "https://login.microsoftonline.com/" + CONFIG.TENANT_ID, redirectUri: CONFIG.REDIRECT },
+      cache: { cacheLocation: "sessionStorage" }
+    });
+    show("Sẵn sàng. Nhấn <b>Đăng nhập</b> — màn hình Microsoft sẽ mở rồi tự quay lại trang này." +
+         ' <span class="dim">(bản v2 không cần popup)</span>', "");
+  }
+} catch(e){ fail("Khởi tạo MSAL lỗi", e); }
+
+(async () => {
   try {
-    const r = await msal.loginPopup({ scopes: CONFIG.SCOPES, prompt: "select_account" });
-    show('Đăng nhập OK: <b>' + r.account.username + "</b> (tenant " + r.account.tenantId.slice(0,8) + "…)", "ok");
-  } catch (e) { show("Đăng nhập LỖI: " + (e.message || e), "bad"); raw.textContent = JSON.stringify(e, null, 2); }
+    if (!pca) return;
+    const r = await pca.handleRedirectPromise();
+    if (r && r.account) show("✅ Đăng nhập OK: <b>"+r.account.username+"</b> (tenant "+r.account.tenantId.slice(0,8)+"…)", "ok");
+  } catch(e){ fail("Sau khi quay lại từ trang đăng nhập có lỗi", e); }
+})();
+
+async function dangnhap(){
+  try {
+    if (!pca) return fail("Chưa khởi tạo được MSAL — xem lỗi đỏ phía trên.");
+    await pca.loginRedirect({ scopes: CONFIG.SCOPES, prompt: "select_account" });
+  } catch(e){ fail("Đăng nhập lỗi", e); }
 }
-async function goiGraph() {
+async function goiGraph(){
   try {
-    const r = await msal.acquireTokenSilent({ scopes: CONFIG.SCOPES, account: msal.getAllAccounts()[0] })
-      .catch(e => msal.acquireTokenPopup({ scopes: CONFIG.SCOPES }));
+    const acc = pca.getAllAccounts()[0];
+    if (!acc) return fail("Chưa đăng nhập — nhấn Đăng nhập trước.");
+    let r;
+    try { r = await pca.acquireTokenSilent({ scopes: CONFIG.SCOPES, account: acc }); }
+    catch(e){ r = await pca.acquireTokenRedirect({ scopes: CONFIG.SCOPES }); }
     const res = await fetch("https://graph.microsoft.com/v1.0/me", { headers: { Authorization: "Bearer " + r.accessToken } });
     const me = await res.json();
-    if (res.ok) { show("Graph OK — /me trả về: " + me.userPrincipalName, "ok"); raw.textContent = JSON.stringify(me, null, 2); }
-    else { show("Graph trả lỗi " + res.status, "bad"); raw.textContent = JSON.stringify(me, null, 2); }
-  } catch (e) { show("Token LỖI: " + (e.message || e), "bad"); raw.textContent = JSON.stringify(e, null, 2); }
+    if (res.ok){ show("✅ Graph OK — /me trả về: <b>"+(me.userPrincipalName||me.id)+"</b> — chốt mục 3.", "ok"); raw.textContent = JSON.stringify(me, null, 2); }
+    else fail("Graph trả lỗi "+res.status, me);
+  } catch(e){ fail("Lấy token/Graph lỗi", e); }
 }
 </script>
 </body>
